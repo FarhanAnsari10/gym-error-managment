@@ -4,10 +4,12 @@ import Feather from '@expo/vector-icons/Feather';
 import Foundation from '@expo/vector-icons/Foundation';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Tabs } from 'expo-router';
-import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet } from 'react-native';
+import { useEffect, useRef, useContext } from 'react';
+import { Animated, StyleSheet, Image } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { moderateScale } from "react-native-size-matters";
 import { useTheme } from '../../context/ThemeContext';
+import { userDetailContext } from '../../context/userDetailContext';
 
 // Animated tab icon component for smooth transitions
 function AnimatedTabIcon({ focused, children }) {
@@ -37,10 +39,10 @@ function AnimatedTabIcon({ focused, children }) {
       style={{
         justifyContent: 'center',
         alignItems: 'center',
-        borderRadius: 22,
+        borderRadius: 18, // Half of the height to make it pill-shaped
         backgroundColor: bgColor,
-        width: 44,
-        height: 44,
+        width: 60, // Wider for pill shape
+        height: 36, // Smaller height
         transform: [{ scale: scaleAnim }],
         // Removed alignSelf to allow parent to center
       }}
@@ -52,6 +54,8 @@ function AnimatedTabIcon({ focused, children }) {
 
 export default function Layout() {
   const { isDarkMode } = useTheme();
+  const { bottom } = useSafeAreaInsets();
+  const { userDetail } = useContext(userDetailContext); // Access userDetail from context
   return (
     <Tabs
       screenOptions={{
@@ -68,10 +72,10 @@ export default function Layout() {
         tabBarStyle: {
           backgroundColor: colors.wblack,
           position: 'absolute',
-          // bottom: 60,
-          height: moderateScale(80),
-          // marginHorizontal: 10,
-          // borderRadius: 50,
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: moderateScale(40) + bottom, // Decreased base height
           flexDirection: 'row',
           alignItems: 'flex-start',
           justifyContent: 'space-around',
@@ -82,7 +86,8 @@ export default function Layout() {
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.25,
           shadowRadius: 3.84,
-          paddingTop: moderateScale(10),
+          paddingTop: moderateScale(5), // Adjusted paddingTop to move icons down
+          paddingBottom: bottom,
         },
         tabBarItemStyle: {
           justifyContent: 'center',
@@ -137,7 +142,14 @@ export default function Layout() {
         options={{
           tabBarIcon: ({ color, focused }) => (
             <AnimatedTabIcon focused={focused}>
-              <Feather name="user" size={22} color={focused ? colors.wblack : color} />
+              {userDetail?.profileImage ? ( // Conditionally render profile image
+                <Image
+                  source={{ uri: userDetail.profileImage }}
+                  style={{ width: 24, height: 24, borderRadius: 12 }} // Adjust size and borderRadius as needed
+                />
+              ) : (
+                <Feather name="user" size={22} color={focused ? colors.wblack : color} />
+              )}
             </AnimatedTabIcon>
           ),
         }}
