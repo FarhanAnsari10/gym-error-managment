@@ -39,12 +39,11 @@ function AnimatedTabIcon({ focused, children }) {
       style={{
         justifyContent: 'center',
         alignItems: 'center',
-        borderRadius: 18, // Half of the height to make it pill-shaped
+        borderRadius: 18, 
         backgroundColor: bgColor,
-        width: 60, // Wider for pill shape
-        height: 36, // Smaller height
+        width: 60, 
+        height: 36, 
         transform: [{ scale: scaleAnim }],
-        // Removed alignSelf to allow parent to center
       }}
     >
       {children}
@@ -55,51 +54,44 @@ function AnimatedTabIcon({ focused, children }) {
 export default function Layout() {
   const { isDarkMode } = useTheme();
   const { bottom } = useSafeAreaInsets();
-  const { userDetail } = useContext(userDetailContext); // Access userDetail from context
+  const { userDetail } = useContext(userDetailContext); 
+
   return (
     <Tabs
       screenOptions={{
-            // sceneContainerStyle: { backgroundColor: isDarkMode ? '#121212' : '#fff' },
         animationEnabled: false,
         headerShown: false,
-        tabBarActiveTintColor: colors.wblack,
-        tabBarInactiveTintColor: colors.lgrey,
-        tabBarShowLabel: false,
-        backgroundColor: isDarkMode ? '#181818' : '#fff' ,
-         cardStyle: {
-          backgroundColor: isDarkMode ? '#121212' : '#FFFFFF', // dark theme bg
-         },
+        tabBarActiveTintColor: colors.gwhite,
+        tabBarInactiveTintColor: colors.twhite,
+        tabBarShowLabel: true,
+        backgroundColor: isDarkMode ? '#181818' : '#fff',
         tabBarStyle: {
           backgroundColor: colors.wblack,
           position: 'absolute',
           bottom: 0,
           left: 0,
           right: 0,
-          height: moderateScale(40) + bottom, // Decreased base height
-          flexDirection: 'row',
-          alignItems: 'flex-start',
-          justifyContent: 'space-around',
-          // borderWidth: 0.4,
-          borderColor: colors.twhite,
-          // elevation: 8,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.25,
-          shadowRadius: 3.84,
-          paddingTop: moderateScale(5), // Adjusted paddingTop to move icons down
-          paddingBottom: bottom,
+          height: moderateScale(65) + bottom,
+          borderTopWidth: 0,
+          paddingBottom: bottom + moderateScale(5),
+          paddingTop: moderateScale(10),
         },
         tabBarItemStyle: {
+          flexDirection: 'column',
+          alignItems: 'center',
           justifyContent: 'center',
-          alignItems: 'center', // Center the circle container vertically
-          paddingVertical: 0,
+        },
+        tabBarLabelStyle: {
+          fontSize: moderateScale(10),
+          fontWeight: '500',
+          marginTop: moderateScale(6),
         },
       }}
     >
       <Tabs.Screen
         name="home"
         options={{
-          // animation:'none',
+          tabBarLabel: 'Home',
           tabBarIcon: ({ color, focused }) => (
             <AnimatedTabIcon focused={focused}>
               <Entypo name="home" size={22} color={focused ? colors.wblack : color} />
@@ -110,6 +102,7 @@ export default function Layout() {
       <Tabs.Screen
         name="member"
         options={{
+          tabBarLabel: 'Member',
           tabBarIcon: ({ color, focused }) => (
             <AnimatedTabIcon focused={focused}>
               <MaterialIcons name="people" size={22} color={focused ? colors.wblack : color} />
@@ -120,6 +113,7 @@ export default function Layout() {
       <Tabs.Screen
         name="addmember"
         options={{
+          tabBarLabel: 'Add Member',
           tabBarIcon: ({ color, focused }) => (
             <AnimatedTabIcon focused={focused}>
               <Feather name="plus" size={22} color={focused ? colors.wblack : color} />
@@ -130,6 +124,7 @@ export default function Layout() {
       <Tabs.Screen
         name="dashboard"
         options={{
+          tabBarLabel: 'Dashboard',
           tabBarIcon: ({ color, focused }) => (
             <AnimatedTabIcon focused={focused}>
               <Foundation name="graph-pie" size={22} color={focused ? colors.wblack : color} />
@@ -140,12 +135,13 @@ export default function Layout() {
       <Tabs.Screen
         name="profile"
         options={{
+          tabBarLabel: 'Profile',
           tabBarIcon: ({ color, focused }) => (
             <AnimatedTabIcon focused={focused}>
-              {userDetail?.profileImage ? ( // Conditionally render profile image
+              {userDetail?.profileImage ? (
                 <Image
                   source={{ uri: userDetail.profileImage }}
-                  style={{ width: 24, height: 24, borderRadius: 12 }} // Adjust size and borderRadius as needed
+                  style={{ width: 24, height: 24, borderRadius: 12 }}
                 />
               ) : (
                 <Feather name="user" size={22} color={focused ? colors.wblack : color} />
