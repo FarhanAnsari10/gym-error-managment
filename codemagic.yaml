@@ -1,6 +1,6 @@
 workflows:
   react-native-ios:
-    name: Gym App iOS Build
+    name: KGFlex iOS Build
     max_build_duration: 60
     instance_type: mac_mini_m1
     scripts:
@@ -14,7 +14,7 @@ workflows:
         script: |
           # build-ipa is a Codemagic helper that handles xcodebuild under the hood
           xcode-project build-ipa \
-            --workspace ios/GymApp.xcworkspace \
-            --scheme GymApp
+            --workspace ios/KGFlex.xcworkspace \
+            --scheme KGFlex
     artifacts:
       - build/ios/ipa/*.ipa
