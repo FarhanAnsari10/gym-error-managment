@@ -1,15 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { collectionGroup, getDocs, orderBy, query, where } from 'firebase/firestore';
+import { collectionGroup, getDocs, orderBy, query, where, deleteDoc, doc, updateDoc, getDoc, increment } from 'firebase/firestore';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Platform, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { db } from '../../config/firebaseconfig';
+import { ActivityIndicator, FlatList, Platform, SafeAreaView, StyleSheet, Text, TouchableOpacity, View, Alert, InteractionManager } from 'react-native';
+
+
+import { auth, db } from '../../config/firebaseconfig';
 import { useTheme } from '../../context/ThemeContext';
-import { InteractionManager } from 'react-native'; // add this at top if not already
-
-
-import { auth } from '../../config/firebaseconfig';
 
 const ITEM_HEIGHT = 150; // Estimate based on current styling. Adjust if cards appear cut off or have too much space.
 
@@ -24,6 +22,90 @@ const AllTransactionsScreen = () => {
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const { isDarkMode } = useTheme();
+
+  const handleDeleteTransaction = async (item) => {
+    Alert.alert(
+      "Delete Transaction",
+      "Are you sure you want to delete this transaction? This will also update the financial summary and dashboard.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setLoading(true);
+              const { amountPaid, dues, admissionFee, paymentDate, adminId, memberId, refPath, type } = item;
+              const date = new Date(paymentDate);
+              const year = date.getFullYear().toString();
+              const month = (date.getMonth() + 1).toString().padStart(2, '0');
+
+              // 1. Update Financial Summary
+              const summaryRef = doc(db, 'admin', adminId, 'financialSummary', year);
+              const summarySnap = await getDoc(summaryRef);
+              
+              if (summarySnap.exists()) {
+                const data = summarySnap.data();
+                const monthly = { ...data.monthly } || {};
+                const yearlyTotal = { ...data.yearlyTotal } || { income: 0, dues: 0 };
+                
+                const monthData = { ...(monthly[month] || { income: 0, dues: 0 }) };
+                
+                // Subtract income
+                monthData.income = (monthData.income || 0) - amountPaid;
+                yearlyTotal.income = (yearlyTotal.income || 0) - amountPaid;
+
+                // Subtract admissionFee if any
+                if (admissionFee) {
+                  monthData.admissionFee = (monthData.admissionFee || 0) - admissionFee;
+                }
+                
+                // Heuristic to distinguish plan purchase vs dues payment
+                const isPlanPurchase = (item.planName || item.planDetail || type === 'initial' || type === 'renewal') && type !== 'payment';
+                
+                if (isPlanPurchase) {
+                  monthData.dues = (monthData.dues || 0) - dues;
+                  yearlyTotal.dues = (yearlyTotal.dues || 0) - dues;
+                } else {
+                  // It was likely a dues payment which reduced dues
+                  monthData.dues = (monthData.dues || 0) + amountPaid;
+                  yearlyTotal.dues = (yearlyTotal.dues || 0) + amountPaid;
+                }
+
+                monthly[month] = monthData;
+                await updateDoc(summaryRef, { monthly, yearlyTotal });
+              }
+
+              // 2. Update Member Dues
+              if (memberId) {
+                const memberRef = doc(db, 'admin', adminId, 'members', memberId);
+                const isPlanPurchase = (item.planName || item.planDetail || type === 'initial' || type === 'renewal') && type !== 'payment';
+                if (isPlanPurchase) {
+                    await updateDoc(memberRef, {
+                        dues: increment(-dues)
+                    });
+                } else {
+                    await updateDoc(memberRef, {
+                        dues: increment(amountPaid)
+                    });
+                }
+              }
+
+              // 3. Delete Transaction Document
+              await deleteDoc(doc(db, refPath));
+
+              Alert.alert("Success", "Transaction deleted successfully.");
+              fetchTransactions();
+            } catch (error) {
+              console.error("Error deleting transaction:", error);
+              Alert.alert("Error", "Failed to delete transaction.");
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   // Theme colors
   const theme = useMemo(() => {
@@ -113,8 +195,12 @@ const AllTransactionsScreen = () => {
       const snapshot = await getDocs(q);
       const txns = snapshot.docs.map(docSnap => {
         const txn = docSnap.data();
+        const memberRef = docSnap.ref.parent.parent;
         return {
           id: docSnap.id,
+          refPath: docSnap.ref.path,
+          memberId: memberRef ? memberRef.id : null,
+          adminId: txn.adminId,
           receiptId: txn.receiptId || '',
           memberName: txn.memberName || txn.name || '',
           paymentDate: txn.paymentDate,
@@ -122,6 +208,8 @@ const AllTransactionsScreen = () => {
           planName: txn.planname || '',
           planDetail: txn.planDetail || '',
           dues: txn.dues || 0,
+          admissionFee: txn.admissionFee || 0,
+          type: txn.type || '',
         };
       });
       setTransactions(txns);
@@ -154,6 +242,12 @@ const AllTransactionsScreen = () => {
         <Text style={[styles.duesModern, { color: theme.duesText, backgroundColor: theme.duesBg }]}>Dues: ₹{item.dues}</Text>
       </View>
       <View style={styles.cardRowBottom}>
+        <TouchableOpacity 
+          onPress={() => handleDeleteTransaction(item)}
+          style={{ padding: 4, marginRight: 'auto' }}
+        >
+          <Ionicons name="trash-outline" size={20} color="#e53935" />
+        </TouchableOpacity>
         <Text style={[styles.dateModern, { color: theme.textSecondary }]}>{formatDate(item.paymentDate)}</Text>
       </View>
     </View>

@@ -291,11 +291,13 @@ console.log(planExpireDate.toISOString().split('T')[0]); // YYYY-MM-DD
           amountPaid: parseFloat(form.paidAmount) || 0,
           paymentMethod: form.paymentMethod,
           dues: parseFloat(form.dues) || 0,
+          admissionFee: parseFloat(form.admissionFee) || 0,
           planDetail: form.gymPlan,
           planDuration: planDuration,
           planExpireDate: planExpireDate.toISOString(),
           receiptId: `TXN${Date.now()}`,
-          adminId: uid
+          adminId: uid,
+          type: 'initial'
         }
       );
       await setDoc(

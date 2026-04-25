@@ -16,7 +16,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { addDoc, collection, doc, getDoc, getDocs, orderBy, query, setDoc, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, getDocs, orderBy, query, setDoc, updateDoc, deleteDoc, increment } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -30,7 +30,8 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
+  InteractionManager
 } from 'react-native';
 import colors from '../../assets/colors';
 import { useTheme } from '../../context/ThemeContext';
@@ -233,6 +234,8 @@ useEffect(() => {
   const[newplanprice, setNewPlanPrice] = useState(0);
   const[newtotaldues, setNewTotalDues] = useState(0);
   const[newpaidamount, setNewPaidAmount] = useState(null);
+  const [whatsAppModalVisible, setWhatsAppModalVisible] = useState(false);
+  const [customWhatsAppMessage, setCustomWhatsAppMessage] = useState('');
   // Attendance info for current week: [{date, status}]
   const [weekAttendance, setWeekAttendance] = useState([
     { day: 'Mon', status: 'none' },
@@ -680,6 +683,7 @@ const processPayment = async () => {
       receiptId,
       paymentDate: new Date().toISOString(),
       status: 'completed',
+      type: 'payment',
       adminId,
     };
 
@@ -967,6 +971,85 @@ if(prevMonth === month){
     console.error('Error processing plan renewal:', error);
     Alert.alert('Error', 'Failed to process plan renewal');
   }
+};
+
+const handleDeleteTransaction = async (item) => {
+  Alert.alert(
+    "Delete Transaction",
+    "Are you sure you want to delete this transaction? This will also update the financial summary and dashboard.",
+    [
+      { text: "Cancel", style: "cancel" },
+      { 
+        text: "Delete", 
+        style: "destructive",
+        onPress: async () => {
+          try {
+            setLoading(true);
+            const { amountPaid, dues: txnDues, admissionFee, paymentDate, adminId, type, id: txnId } = item;
+            const date = new Date(paymentDate);
+            const year = date.getFullYear().toString();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+
+            // 1. Update Financial Summary
+            const summaryRef = doc(db, 'admin', adminId, 'financialSummary', year);
+            const summarySnap = await getDoc(summaryRef);
+            
+            if (summarySnap.exists()) {
+              const data = summarySnap.data();
+              const monthly = { ...data.monthly } || {};
+              const yearlyTotal = { ...data.yearlyTotal } || { income: 0, dues: 0 };
+              
+              const monthData = { ...(monthly[month] || { income: 0, dues: 0 }) };
+              
+              monthData.income = (monthData.income || 0) - amountPaid;
+              yearlyTotal.income = (yearlyTotal.income || 0) - amountPaid;
+
+              if (admissionFee) {
+                monthData.admissionFee = (monthData.admissionFee || 0) - admissionFee;
+              }
+              
+              const isPlanPurchase = (item.planDetail || type === 'initial' || type === 'renewal') && type !== 'payment';
+              
+              if (isPlanPurchase) {
+                monthData.dues = (monthData.dues || 0) - txnDues;
+                yearlyTotal.dues = (yearlyTotal.dues || 0) - txnDues;
+              } else {
+                monthData.dues = (monthData.dues || 0) + amountPaid;
+                yearlyTotal.dues = (yearlyTotal.dues || 0) + amountPaid;
+              }
+
+              monthly[month] = monthData;
+              await updateDoc(summaryRef, { monthly, yearlyTotal });
+            }
+
+            // 2. Update Member Dues
+            const memberRef = doc(db, 'admin', adminId, 'members', memberId);
+            const isPlanPurchase = (item.planDetail || type === 'initial' || type === 'renewal') && type !== 'payment';
+            if (isPlanPurchase) {
+                await updateDoc(memberRef, {
+                    dues: increment(-txnDues)
+                });
+            } else {
+                await updateDoc(memberRef, {
+                    dues: increment(amountPaid)
+                });
+            }
+
+            // 3. Delete Transaction Document
+            const txnDocRef = doc(db, 'admin', adminId, 'members', memberId, 'transactions', txnId);
+            await deleteDoc(txnDocRef);
+
+            Alert.alert("Success", "Transaction deleted successfully.");
+            fetchMemberDetails(); // Refresh list
+          } catch (error) {
+            console.error("Error deleting transaction:", error);
+            Alert.alert("Error", "Failed to delete transaction.");
+            setLoading(false);
+          }
+        }
+      }
+    ]
+  );
 };
 
 
@@ -1624,6 +1707,21 @@ if(prevMonth === month){
               <Ionicons name="call-outline" size={28} color={isDarkMode?"#eee":"#222"} />
               <Text style={{ fontSize: 12, color: isDarkMode ? colors.gwhite : '#414141', marginTop: 2 }}>Call</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{ alignItems: 'center' }}
+              onPress={() => {
+                if (member.mobile) {
+                  setWhatsAppModalVisible(true);
+                } else {
+                  Alert.alert('No mobile number', 'This member does not have a mobile number.');
+                }
+              }}
+            >
+              <Ionicons name="logo-whatsapp" size={28} color="#25D366" />
+              <Text style={{ fontSize: 12, color: isDarkMode ? colors.gwhite : '#414141', marginTop: 2 }}>WhatsApp</Text>
+            </TouchableOpacity>
+
             {/* QR Icon Button */}
             <TouchableOpacity style={{ alignItems: 'center' }} onPress={() => setShowQRModal(true)}>
               <Ionicons name="qr-code-outline" size={28} color={isDarkMode?"#eee":"#222"} />
@@ -1712,6 +1810,85 @@ if(prevMonth === month){
               onPress={() => setShowQRModal(false)}
             >
               <Text style={{ fontSize: 15 }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* WhatsApp Modal */}
+      <Modal
+        visible={whatsAppModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setWhatsAppModalVisible(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <View style={{ backgroundColor: isDarkMode ? colors.wblack : '#fff', borderRadius: 20, padding: 24, width: '85%', alignItems: 'center' }}>
+            <Ionicons name="logo-whatsapp" size={50} color="#25D366" style={{ marginBottom: 16 }} />
+            <Text style={{ fontWeight: 'bold', fontSize: 20, marginBottom: 20, color: isDarkMode ? colors.gwhite : '#222' }}>WhatsApp Message</Text>
+            
+            <TouchableOpacity 
+              style={{ 
+                backgroundColor: '#25D366', 
+                padding: 14, 
+                borderRadius: 12, 
+                width: '100%', 
+                alignItems: 'center',
+                marginBottom: 12
+              }}
+              onPress={() => {
+                const msg = "Your plan has expired, please renew your plan.";
+                Linking.openURL(`whatsapp://send?phone=91${member.mobile}&text=${encodeURIComponent(msg)}`);
+                setWhatsAppModalVisible(false);
+              }}
+            >
+              <Text style={{ color: '#fff', fontWeight: 'bold' }}>Plan Expired Message</Text>
+            </TouchableOpacity>
+
+            <View style={{ width: '100%', marginTop: 8 }}>
+              <Text style={{ color: isDarkMode ? colors.twhite : '#888', marginBottom: 6, fontSize: 13 }}>Custom Message:</Text>
+              <TextInput
+                style={{ 
+                  backgroundColor: isDarkMode ? '#333' : '#f0f0f0', 
+                  borderRadius: 12, 
+                  padding: 12, 
+                  color: isDarkMode ? '#fff' : '#000',
+                  minHeight: 80,
+                  textAlignVertical: 'top'
+                }}
+                multiline
+                placeholder="Enter custom message..."
+                placeholderTextColor={isDarkMode ? '#888' : '#aaa'}
+                value={customWhatsAppMessage}
+                onChangeText={setCustomWhatsAppMessage}
+              />
+              <TouchableOpacity 
+                style={{ 
+                  backgroundColor: '#4F8EF7', 
+                  padding: 14, 
+                  borderRadius: 12, 
+                  width: '100%', 
+                  alignItems: 'center',
+                  marginTop: 12
+                }}
+                onPress={() => {
+                  if (customWhatsAppMessage.trim()) {
+                    Linking.openURL(`whatsapp://send?phone=91${member.mobile}&text=${encodeURIComponent(customWhatsAppMessage)}`);
+                    setWhatsAppModalVisible(false);
+                  } else {
+                    Alert.alert('Empty message', 'Please enter a custom message.');
+                  }
+                }}
+              >
+                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Send Custom Message</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={{ marginTop: 20, padding: 10 }}
+              onPress={() => setWhatsAppModalVisible(false)}
+            >
+              <Text style={{ color: isDarkMode ? colors.twhite : '#555', fontWeight: '600' }}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1883,9 +2060,15 @@ if(prevMonth === month){
                   </View>
                 </View>
               </View>
-              {/* Right: Price only */}
-              <View style={{ alignItems: 'flex-end', justifyContent: 'center', height: 38 }}>
-                <Text style={{ color: isDarkMode ? colors.gwhite : '#434343', fontSize: 17 }}>₹{txn.amountPaid}</Text>
+              {/* Right: Price and Delete */}
+              <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+                <Text style={{ color: isDarkMode ? colors.gwhite : '#434343', fontSize: 17, fontWeight: 'bold' }}>₹{txn.amountPaid}</Text>
+                <TouchableOpacity 
+                  onPress={() => handleDeleteTransaction(txn)}
+                  style={{ marginTop: 4 }}
+                >
+                  <Ionicons name="trash-outline" size={18} color="#e53935" />
+                </TouchableOpacity>
               </View>
             </View>
           ))
